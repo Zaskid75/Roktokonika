@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Import Donors</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 40px; max-width: 600px; margin: 0 auto; background: #f8fafc; }
+        .card { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        button { background: #B91C1C; color: white; border: none; padding: 10px 20px; font-size: 16px; border-radius: 6px; cursor: pointer; }
+        button:disabled { background: #94a3b8; cursor: not-allowed; }
+        #log { background: #1e293b; color: #a7f3d0; padding: 15px; border-radius: 6px; margin-top: 20px; height: 300px; overflow-y: auto; font-family: monospace; font-size: 13px; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>Blood Network Import Tool</h2>
+        <p>This tool will read <code>dhaka_dummy_donors_50.csv</code> and import all 50 users into your Supabase database.</p>
+        <p><strong>Note:</strong> It adds a 1-second delay between users to avoid Supabase rate limits.</p>
+        <button id="start-btn" onclick="startImport()">Start Import</button>
+        <div id="log">Ready to import...<br></div>
+    </div>
+
+    <!-- Supabase JS -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+        const sb = supabase.createClient(
+            'https://auajakltxqknexfsxqmt.supabase.co',
+            'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1YWpha2x0eHFrbmV4ZnN4cW10Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkxOTUyMzUsImV4cCI6MjEwNDc3MTIzNX0.TI1NSg5yR2a9Bfo_FMsGuoZ89sRuNeggDLg8UZM39BQ'
+        );
+
+        function log(msg) {
+            const el = document.getElementById('log');
+            el.innerHTML += msg + '<br>';
+            el.scrollTop = el.scrollHeight;
+        }
+
+        // Delay function
+        const delay = ms => new Promise(res => setTimeout(res, ms));
+
+        // Basic CSV line parser (handles quotes)
+        function parseCsvLine(text) {
+            let re_valid = /^\s*(?:'[^'\\]*(?:\\[\S\s][^'\\]*)*'|"[^"\\]*(?:\\[\S\s][^"\\]*)*"|[^,'"\s\\]*(?:\s+[^,'"\s\\]+)*)\s*(?:,\s*(?:'[^'\\]*(?:\\[\S\s][^'\\]*)*'|"[^"\\]*(?:\\[\S\s][^"\\]*)*"|[^,'"\s\\]*(?:\s+[^,'"\s\\]+)*)\s*)*$/;
+            let re_value = /(?!\s*$)\s*(?:'([^'\\]*(?:\\[\S\s][^'\\]*)*)'|"([^"\\]*(?:\\[\S\s][^"\\]*)*)"|([^,'"\s\\]*(?:\s+[^,'"\s\\]+)*))\s*(?:,|$)/g;
+            if (!re_valid.test(text)) return null;
+            let a = [];
+            text.replace(re_value, function(m0, m1, m2, m3) {
+                if (m1 !== undefined) a.push(m1.replace(/\\'/g, "'"));
+                else if (m2 !== undefined) a.push(m2.replace(/\\"/g, '"'));
+                else if (m3 !== undefined) a.push(m3);
+                return '';
+            });
+            if (/,\s*$/.test(text)) a.push('');
+            return a;
+        }
+
+        async function startImport() {
+            document.getElementById('start-btn').disabled = true;
+            log('Fetching CSV file...');
+
+            try {
+                const response = await fetch('dhaka_dummy_donors_50.csv');
+                if (!response.ok) throw new Error('Could not find dhaka_dummy_donors_50.csv in this directory.');
+                const csvData = await response.text();
+                
+                const lines = csvData.trim().split('\n');
+                // Remove header
+                lines.shift();
+
+                log(`Found ${lines.length} users to import.`);
+
+                let successCount = 0;
+
+                for (let i = 0; i < lines.length; i++) {
+                    const line = lines[i].trim();
+                    if (!line) continue;
+
+                    const cols = parseCsvLine(line);
+                    if (!cols || cols.length < 5) continue;
+
+                    const name = cols[0];
+                    const email = cols[1];
+                    const bloodGroup = cols[2];
+                    const phone = cols[3];
+                    let location = cols[4];
+                    
+                    // The CSV has 'Dhanmondi, Dhaka', we just want 'Dhanmondi' to match our app dropdown
+                    if (location.includes(',')) {
+                        location = location.split(',')[0].trim();
+                    }
+
+                    // Guessing gender blindly for the dummy data, let's just do random or basic check
+                    let gender = 'male';
+                    if (name.toLowerCase().includes('akter') || name.toLowerCase().includes('begum') || 
+                        name.toLowerCase().includes('jahan') || name.toLowerCase().includes('sultana') ||
+                        name.toLowerCase().includes('yasmin') || name.toLowerCase().includes('afrin') ||
+                        name.toLowerCase().includes('ara') || name.toLowerCase().includes('mst')) {
+                        gender = 'female';
+                    }
+
+                    log(`[${i+1}/${lines.length}] Creating auth for: ${email}...`);
+                    
+                    const { data: authData, error: authErr } = await sb.auth.signUp({
+                        email: email,
+                        password: 'password123',
+                        options: { data: { gender: gender } }
+                    });
+
+                    if (authErr) {
+                        // Very likely rate limit or already exists
+                        if (authErr.message.includes('rate limit')) {
+                            log(`<span style="color:#ef4444">Rate Limit hit! Waiting 30 seconds...</span>`);
+                            await delay(30000);
+                            i--; // retry this one
+                            continue;
+                        }
+                        log(`<span style="color:#f59e0b">Skipping ${email}: ${authErr.message}</span>`);
+                        continue;
+                    }
+
+                    // If signup successful, write profile
+                    const userId = authData.user.id;
+                    
+                    const { error: profileErr } = await sb.from('profiles').insert({
+                        id: userId,
+                        name: name,
+                        blood_group: bloodGroup,
+                        phone: phone,
+                        location: location,
+                        gender: gender,
+                        last_donation_date: null
+                    });
+
+                    if (profileErr) {
+                        log(`<span style="color:#f59e0b">Error creating profile for ${name}: ${profileErr.message}</span>`);
+                    } else {
+                        log(`<span style="color:#34d399">✓ Successfully imported ${name}</span>`);
+                        successCount++;
+                    }
+
+                    // Sign out so the next signup doesn't conflict
+                    await sb.auth.signOut();
+
+                    // Wait 2 seconds to avoid easy rate limits
+                    await delay(2000);
+                }
+
+                log(`<br><strong>Import Complete! ${successCount} users added successfully.</strong>`);
+
+            } catch (err) {
+                log(`<span style="color:#ef4444">Fatal Error: ${err.message}</span>`);
+            }
+        }
+    </script>
+</body>
+</html>
