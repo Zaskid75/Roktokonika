@@ -250,19 +250,26 @@ async function loadRequests() {
   list.innerHTML = requests.map((req, i) => {
     const count = donations?.filter(d => d.request_id === req.id).length || 0;
     const isOwner = req.requester_id === currentUser.id;
+    const isAdmin = currentProfile?.is_admin === true;
     const urgencyClass = (() => {
       const hoursAgo = (Date.now() - new Date(req.created_at)) / 3600000;
       if (hoursAgo < 2) return 'urgency-critical';
       if (hoursAgo < 12) return 'urgency-high';
       return '';
     })();
+    // Colorful avatar for requester
+    const reqAvatarLetter = (req.requester_name || 'U').charAt(0).toUpperCase();
+    const reqAvatarBg = getAvatarColor(req.requester_name);
     return `
     <div class="request-card ${isOwner ? 'is-owner' : ''} ${urgencyClass}" style="animation-delay:${i*0.05}s"
       ${isOwner ? `onclick="openDetailPanel('${req.id}')" title="Click to see matching donors"` : ''}>
       <div class="card-top">
         <div class="card-info">
           <h3>🏥 ${safeText(req.hospital)}</h3>
-          <p class="card-poster">Posted by <strong>${safeText(req.requester_name)}</strong>${req.requester_gender === 'female' ? ' <span class="gender-tag gender-f">♀</span>' : ' <span class="gender-tag gender-m">♂</span>'}</p>
+          <p class="card-poster" style="display:flex;align-items:center;gap:8px;margin-top:4px">
+            <span style="width:22px;height:22px;border-radius:50%;background:${reqAvatarBg};color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0">${reqAvatarLetter}</span>
+            Posted by <strong>${safeText(req.requester_name)}</strong>${req.requester_gender === 'female' ? ' <span class="gender-tag gender-f">♀</span>' : ' <span class="gender-tag gender-m">♂</span>'}
+          </p>
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0">
           <span class="blood-badge">${req.blood_group}</span>
@@ -277,18 +284,18 @@ async function loadRequests() {
       ${req.message ? `<div class="card-message">"${safeText(req.message)}"</div>` : ''}
       <div class="card-divider"></div>
       <div class="card-actions">
-        ${isOwner
+        ${(isOwner || isAdmin)
           ? `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;width:100%">
-               <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();viewVolunteers('${req.id}')">
+               ${isOwner ? `<button class="btn btn-outline btn-sm" onclick="event.stopPropagation();viewVolunteers('${req.id}')">
                  <span>🙋</span> Volunteers <span class="vol-badge">${count}</span>
-               </button>
-               <button class="btn btn-green btn-sm" onclick="event.stopPropagation();markFulfilled('${req.id}')">
+               </button>` : ''}
+               ${isOwner ? `<button class="btn btn-green btn-sm" onclick="event.stopPropagation();markFulfilled('${req.id}')">
                  <span>✓</span> Mark Fulfilled
+               </button>` : ''}
+               <button class="btn btn-delete btn-sm" onclick="event.stopPropagation();deleteRequest('${req.id}')" title="${isAdmin && !isOwner ? 'Admin Delete' : 'Delete this request'}">
+                 🗑 ${isAdmin && !isOwner ? 'Admin Delete' : 'Delete'}
                </button>
-               <button class="btn btn-delete btn-sm" onclick="event.stopPropagation();deleteRequest('${req.id}')" title="Delete this request">
-                 🗑 Delete
-               </button>
-               <span class="owner-hint">Click card to see matching donors →</span>
+               ${isOwner ? `<span class="owner-hint">Click card to see matching donors →</span>` : ''}
              </div>`
           : `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;width:100%">
                <button class="btn btn-primary btn-sm donate-btn" onclick="openVolunteerModal('${req.id}','${escAttr(req.requester_name)}','${escAttr(req.hospital_address||'')}','${escAttr(req.location)}','${req.requester_id}')">
@@ -336,7 +343,12 @@ async function deleteRequest(requestId) {
   await sb.from('donations').delete().eq('request_id', requestId);
   await sb.from('messages').delete().eq('request_id', requestId);
   await sb.from('blood_appeals').delete().eq('request_id', requestId);
-  const { error } = await sb.from('blood_requests').delete().eq('id', requestId).eq('requester_id', currentUser.id);
+  // Admin can delete any request; regular users can only delete their own
+  let query = sb.from('blood_requests').delete().eq('id', requestId);
+  if (!currentProfile?.is_admin) {
+    query = query.eq('requester_id', currentUser.id);
+  }
+  const { error } = await query;
   if (error) { showToast('Error deleting request: ' + error.message, 'error'); return; }
   showToast('Request deleted successfully.', 'info');
   loadRequests();
@@ -476,9 +488,12 @@ async function loadDonors() {
     return;
   }
   list.innerHTML = `<div class="donors-grid">
-    ${available.map((d, i) => `
+    ${available.map((d, i) => {
+      const avatarBg = getAvatarColor(d.name);
+      const avatarLetter = d.name.charAt(0).toUpperCase();
+      return `
       <div class="donor-card" style="animation-delay:${i*0.04}s">
-        <div class="donor-avatar">${d.name.charAt(0).toUpperCase()}</div>
+        <div class="donor-avatar" style="background:${avatarBg};color:#fff">${avatarLetter}</div>
         <div class="blood-badge" style="font-size:12px;padding:3px 12px;margin-bottom:8px">${d.blood_group}</div>
         <p class="donor-name">${d.name}</p>
         <span class="donor-gender ${d.gender==='female'?'gender-f':'gender-m'}">${d.gender==='female'?'♀ Female':'♂ Male'}</span>
@@ -489,7 +504,8 @@ async function loadDonors() {
         <div style="margin-top:10px">
           <button class="btn btn-primary btn-sm w-full" onclick="openSendAppealModal('${d.id}','${escHtml(d.name)}',null)">📣 Send Blood Appeal</button>
         </div>
-      </div>`).join('')}
+      </div>`;
+    }).join('')}
   </div>`;
 }
 
@@ -629,15 +645,17 @@ async function loadUnreadAppealsCount() {
 function renderProfile() {
   const p = currentProfile;
   const initial = p.name.charAt(0).toUpperCase();
+  const avatarBg = getAvatarColor(p.name);
   const canDonate = isAvailable(p.last_donation_date);
   document.getElementById('profile-view').innerHTML = `
     <div class="profile-card">
       <div class="profile-head">
-        <div class="profile-avatar">${initial}</div>
+        <div class="profile-avatar" style="background:${avatarBg};color:#fff;font-size:28px">${initial}</div>
         <div>
           <h3>${p.name}</h3>
           <p>${currentUser.email}</p>
           <p style="font-size:12px;color:var(--muted);margin-top:2px">${p.gender === 'female' ? '♀ Female' : '♂ Male'}</p>
+          ${p.is_admin ? '<p style="font-size:12px;background:#E0E7FF;color:#4F46E5;padding:2px 10px;border-radius:100px;display:inline-block;margin-top:4px;font-weight:700">⚡ Admin</p>' : ''}
         </div>
       </div>
       <div class="info-grid">
@@ -739,6 +757,19 @@ function escAttr(str) {
 
 // Alias for backward compat
 function escHtml(str) { return escAttr(str); }
+
+// ── Deterministic avatar color from name ──
+function getAvatarColor(name) {
+  const palette = [
+    '#DC2626','#7C3AED','#059669','#D97706',
+    '#2563EB','#DB2777','#0891B2','#65A30D',
+    '#EA580C','#6D28D9'
+  ];
+  let hash = 0;
+  const s = String(name || 'U');
+  for (let i = 0; i < s.length; i++) hash = (hash * 31 + s.charCodeAt(i)) | 0;
+  return palette[Math.abs(hash) % palette.length];
+}
 
 function showToast(message, type = 'info') {
   const toast = document.getElementById('toast');

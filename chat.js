@@ -7,6 +7,7 @@
 let activeChatRequestId  = null;
 let activeChatReceiverId = null;
 let chatPollInterval     = null;
+let _lastRenderedMsgIds  = '';  // track rendered message IDs to avoid full re-renders
 
 // ── Init chat for a given request ──
 async function initChat(requestId, receiverId) {
@@ -22,14 +23,17 @@ async function initChat(requestId, receiverId) {
     chatPollInterval = null;
   }
 
+  // Reset smart-diff cache for the new conversation
+  _lastRenderedMsgIds = '';
+
   // Step 1: Clean messages older than 48h for this conversation
   await cleanupOldMessages(requestId);
 
   // Step 2: Load remaining messages
   await refreshChat();
 
-  // Step 3: Continuously poll every 2 seconds for instantaneous updates
-  chatPollInterval = setInterval(refreshChat, 2000);
+  // Step 3: Poll every 1.5 seconds for near-instant updates
+  chatPollInterval = setInterval(refreshChat, 1500);
 }
 
 // ── Stop subscription when modal closes ──
@@ -85,11 +89,13 @@ async function refreshChat() {
     return;
   }
 
-  // Only re-render if something changed (avoid losing scroll position needlessly)
-  const prevCount = box.dataset.msgCount || 0;
-  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+  // Smart diff: only re-render if message set changed
+  const newIds = data.map(m => m.id).join(',');
+  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+  const hadNewMessages = newIds !== _lastRenderedMsgIds;
 
-  box.dataset.msgCount = data.length;
+  if (!hadNewMessages) return; // nothing changed — skip full re-render
+  _lastRenderedMsgIds = newIds;
 
   let lastDate = '';
   box.innerHTML = data.map(msg => {
@@ -109,8 +115,8 @@ async function refreshChat() {
       </div>`;
   }).join('');
 
-  // Auto-scroll to bottom only if user was already near the bottom or new messages arrived
-  if (atBottom || Number(prevCount) < data.length) {
+  // Auto-scroll to bottom when near bottom or new messages arrived
+  if (atBottom || hadNewMessages) {
     box.scrollTop = box.scrollHeight;
   }
 }
@@ -121,8 +127,19 @@ async function sendChatMessage() {
   const content = input?.value.trim();
   if (!content || !activeChatRequestId || !activeChatReceiverId) return;
 
+  // Optimistic: show message immediately
   input.value = '';
-  input.focus();
+  input.disabled = true;
+  const box = document.getElementById('chat-messages');
+  const nowStr = new Date().toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
+  if (box) {
+    const el = document.createElement('div');
+    el.style.cssText = 'display:flex;flex-direction:column;align-items:flex-end;opacity:0.6';
+    el.innerHTML = `<div class="msg-bubble msg-mine">${safeText(content)}</div>
+      <span style="font-size:10px;color:var(--muted);margin-top:2px;padding:0 4px">${nowStr} ✓</span>`;
+    box.appendChild(el);
+    box.scrollTop = box.scrollHeight;
+  }
 
   const { error } = await sb.from('messages').insert({
     sender_id:   currentUser.id,
@@ -131,12 +148,17 @@ async function sendChatMessage() {
     content:     content,
   });
 
+  input.disabled = false;
+  input.focus();
+
   if (error) {
     showToast('Could not send message: ' + error.message, 'error');
     input.value = content; // restore
     return;
   }
 
+  // Force a fresh poll so both sides see the real persisted message
+  _lastRenderedMsgIds = ''; // invalidate cache so next poll re-renders
   await refreshChat();
 }
 
@@ -201,7 +223,7 @@ async function loadInbox() {
 
 // ── Open Conversation in Inbox Tab ──
 async function openInboxConversation(requestId, partnerId, partnerName) {
-  // Stop any previous subscription
+  // Stop any previous poll
   if (chatPollInterval) { 
     clearInterval(chatPollInterval);
     chatPollInterval = null; 
@@ -209,6 +231,7 @@ async function openInboxConversation(requestId, partnerId, partnerName) {
 
   activeChatRequestId  = requestId;
   activeChatReceiverId = partnerId;
+  _lastRenderedMsgIds  = ''; // reset cache for new conversation
 
   // Mark active state on inbox list items
   document.querySelectorAll('.inbox-item').forEach(el => el.classList.remove('active'));
@@ -217,12 +240,18 @@ async function openInboxConversation(requestId, partnerId, partnerName) {
   const inboxMain = document.getElementById('inbox-main');
   if (!inboxMain) return;
 
+  // Build avatar using dummy profile picture pattern
+  const avatarLetter = partnerName.charAt(0).toUpperCase();
+  const avatarColors = ['#DC2626','#7C3AED','#059669','#D97706','#2563EB','#DB2777'];
+  const colorIdx = partnerName.charCodeAt(0) % avatarColors.length;
+  const avatarBg = avatarColors[colorIdx];
+
   inboxMain.innerHTML = `
     <div class="chat-header">
-      <div class="chat-avatar">${partnerName.charAt(0).toUpperCase()}</div>
+      <div class="chat-avatar" style="background:${avatarBg};color:#fff;">${avatarLetter}</div>
       <div>
         <div class="chat-name">${safeText(partnerName)}</div>
-        <div class="chat-sub">Messages expire after 48 hours</div>
+        <div class="chat-sub">🟢 Active · Messages expire after 48 hours</div>
       </div>
     </div>
     <div id="chat-messages" class="chat-messages"></div>
@@ -233,8 +262,8 @@ async function openInboxConversation(requestId, partnerId, partnerName) {
 
   await refreshChat();
 
-  // Poll every 2 seconds for instantaneous Inbox updates
-  chatPollInterval = setInterval(refreshChat, 2000);
+  // Poll every 1.5 seconds for near-instant updates
+  chatPollInterval = setInterval(refreshChat, 1500);
 }
 
 // ── Safe text helper (avoids XSS in innerHTML) ──

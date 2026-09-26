@@ -216,6 +216,7 @@
         <span class="nav-title" style="color:white">RoktoKonika</span>
       </div>
       <p class="footer-copy">© 2026 RoktoKonika. Built for Dhaka. Built for life.</p>
+      <p class="footer-copy" style="color:rgba(255,255,255,0.75);font-weight:600;letter-spacing:0.5px">💚 Made by Team-08</p>
     </div>
   </footer>
 </div>
@@ -691,6 +692,7 @@
     </div>
 
     <!-- Users Table -->
+    <!-- Users Table -->
     <div class="admin-table-card">
       <div class="table-toolbar">
         <h4>All Registered Users</h4>
@@ -706,9 +708,33 @@
               <th onclick="sortTable('location')">Location ↕</th>
               <th onclick="sortTable('last_donation_date')">Last Donation ↕</th>
               <th>Status</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody id="admin-table-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <!-- Blood Requests Management Table -->
+    <div class="admin-table-card" style="margin-top:24px">
+      <div class="table-toolbar">
+        <h4>🩸 Blood Requests Management</h4>
+        <span style="font-size:12px;color:var(--muted)">Admin can delete any request</span>
+      </div>
+      <div class="table-wrap">
+        <table id="admin-requests-table" style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead>
+            <tr>
+              <th style="padding:12px 16px;text-align:left;background:var(--bg2);font-weight:700;color:var(--muted);border-bottom:1.5px solid var(--border)">Requester</th>
+              <th style="padding:12px 16px;text-align:left;background:var(--bg2);font-weight:700;color:var(--muted);border-bottom:1.5px solid var(--border)">Blood</th>
+              <th style="padding:12px 16px;text-align:left;background:var(--bg2);font-weight:700;color:var(--muted);border-bottom:1.5px solid var(--border)">Hospital</th>
+              <th style="padding:12px 16px;text-align:left;background:var(--bg2);font-weight:700;color:var(--muted);border-bottom:1.5px solid var(--border)">Location</th>
+              <th style="padding:12px 16px;text-align:left;background:var(--bg2);font-weight:700;color:var(--muted);border-bottom:1.5px solid var(--border)">Status</th>
+              <th style="padding:12px 16px;text-align:left;background:var(--bg2);font-weight:700;color:var(--muted);border-bottom:1.5px solid var(--border)">Date</th>
+              <th style="padding:12px 16px;text-align:left;background:var(--bg2);font-weight:700;color:var(--muted);border-bottom:1.5px solid var(--border)">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="admin-requests-table-body"></tbody>
         </table>
       </div>
     </div>
@@ -724,9 +750,9 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
-<script src="map.js"></script>
-<script src="chat.js?v=2"></script>
-<script src="admin.js"></script>
-<script src="app.js?v=2"></script>
+<script src="map.js?v=3"></script>
+<script src="chat.js?v=3"></script>
+<script src="app.js?v=3"></script>
+<script src="admin.js?v=3"></script>
 </body>
 </html>
