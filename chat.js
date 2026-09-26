@@ -171,7 +171,7 @@ async function loadInbox() {
   // Fetch all messages where current user is sender or receiver
   const { data: msgs, error } = await sb
     .from('messages')
-    .select('*, profiles:sender_id(name), blood_requests:request_id(patient_name, blood_group)')
+    .select('*, profiles:sender_id(name), blood_requests:request_id(requester_name, blood_group)')
     .or(`sender_id.eq.${currentUser.id},receiver_id.eq.${currentUser.id}`)
     .order('created_at', { ascending: false });
 
@@ -191,7 +191,7 @@ async function loadInbox() {
         partnerId: partnerId,
         lastMsg: m.content,
         lastTime: m.created_at,
-        patientName: m.blood_requests?.patient_name || 'Blood Request',
+        patientName: m.blood_requests?.requester_name || 'Blood Request',
         bloodGroup: m.blood_requests?.blood_group || ''
       });
     }
